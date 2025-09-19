@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        #box{
+            height: 100px;
+            width: 100px;
+            background: #000;
+        }
+        #btn-random{
+            margin-top: 10px;
+            height: 30px;
+            width: 100px;            
+            border-radius: 20px;
+            background: lightblue;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>TASK 1</h1>
+
+    <input type="text" id="num1" placeholder="Enter First Number">
+    <input type="text" id="num2" placeholder="Enter Second Number">
+    <button onclick="addNumbers()">Add Numbers</button>
+    <button onclick="subtractNumbers()">Subtract Numbers</button>
+    <button onclick="multiplyNumbers()">Multiply Numbers</button>
+    <button onclick="divideNumbers()">Divide Numbers</button>   
+    <h2 id="result">Result: </h2>
+    <br><br>
+
+    <h1>TASK 2</h1>
+    <div id="box"></div>
+    <button id="btn-random">Random Color</button>
+
+    <script src="script.js"></script>
+</body>
+</html>
