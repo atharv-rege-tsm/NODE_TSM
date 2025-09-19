@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Realtime Drawing — HTML/CSS/JS</title>
+
+  <style>
+    :root{
+      --bg: #0f1724;
+      --panel: #0b1220;
+      --accent: #08f;
+      --muted: #98a0b3;
+      --card: #0f1724;
+    }
+    html,body{
+      height:100%;
+      margin:0;
+      background: linear-gradient(180deg,#071024 0%, #07172a 100%);
+      color: #e6eef8;
+      font-family: Inter, Roboto, system-ui, sans-serif;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+    }
+
+    .app {
+      max-width:1100px;
+      margin:24px auto;
+      display:grid;
+      grid-template-columns: 320px 1fr;
+      gap:18px;
+      padding:18px;
+    }
+
+    /* Left controls panel */
+    .panel {
+      background: rgba(255,255,255,0.03);
+      border-radius:12px;
+      padding:16px;
+      box-shadow: 0 6px 20px rgba(2,6,23,0.6);
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .panel h2{
+      margin:0 0 6px 0;
+      font-size:18px;
+      color:#cfe6ff;
+    }
+    .control-row{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+    label{ font-size:13px; color:var(--muted); }
+
+    input[type="color"]{
+      width:44px;
+      height:36px;
+      border:0;
+      background:transparent;
+      padding:0;
+      cursor:pointer;
+    }
+    input[type="range"]{
+      width:100%;
+    }
+
+    button{
+      background: linear-gradient(90deg,#0ea5ff, #2563eb);
+      border:0;
+      color:white;
+      padding:8px 10px;
+      border-radius:8px;
+      cursor:pointer;
+      font-weight:600;
+      box-shadow: 0 6px 18px rgba(37,99,235,0.14);
+    }
+    button.ghost{
+      background:transparent;
+      border:1px solid rgba(255,255,255,0.06);
+    }
+
+    /* Canvas area */
+    .canvas-wrap {
+      background: linear-gradient(180deg,#051226,#07142a);
+      border-radius:12px;
+      padding:12px;
+      min-height:420px;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+
+    .toolbar {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+    }
+    .status {
+      font-size:13px;
+      color:var(--muted);
+    }
+
+    canvas{
+      display:block;
+      width:100%;
+      height:calc(100% - 48px);
+      border-radius:8px;
+      background: linear-gradient(180deg,#ffffff 0%, #f7fbff 25%);
+      box-shadow: inset 0 2px 12px rgba(2,6,23,0.04);
+      touch-action: none; /* prevents scroll while drawing on touch devices */
+    }
+
+    .footer-actions {
+      display:flex;
+      gap:8px;
+      justify-content:flex-end;
+    }
+
+    @media (max-width:880px){
+      .app{ grid-template-columns: 1fr; padding:12px; }
+      canvas{ height:60vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="panel" aria-label="drawing controls" role="region">
+      <h2>Realtime Draw — Controls</h2>
+
+      <div class="control-row">
+        <label for="color">Color</label>
+        <input id="color" type="color" value="#000000" title="Choose color">
+        <label for="width">Size</label>
+        <input id="width" type="range" min="1" max="40" value="3" />
+      </div>
+
+      <div class="control-row">
+        <button id="clearBtn" class="ghost">Clear Canvas</button>
+        <button id="downloadBtn">Download</button>
+      </div>
+
+      <div style="height:8px"></div>
+      <div class="control-row">
+        <div style="flex:1">
+          <label>Connection</label>
+          <div style="display:flex; gap:8px; margin-top:6px;">
+            <input id="serverUrl" type="text" placeholder="http://localhost:3000" style="flex:1; padding:8px; border-radius:8px; border:0; background:rgba(255,255,255,0.02); color:inherit;" value="http://localhost:3000"/>
+            <button id="connectBtn">Connect</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1"></div>
+
+      <div style="font-size:13px; color:var(--muted)">
+        Tip: Open this page in multiple browser windows to test realtime drawing. On mobile, use touch to draw.
+      </div>
+    </div>
+
+    <div class="canvas-wrap" role="main" aria-label="drawing canvas">
+      <div class="toolbar">
+        <div class="status" id="status">Not connected 🔴</div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <div style="font-size:13px; color:var(--muted)">Participants: <span id="clientsCount">—</span></div>
+        </div>
+      </div>
+
+      <canvas id="drawCanvas"></canvas>
+
+      <div class="footer-actions">
+        <div style="color:var(--muted); font-size:13px; align-self:center">Realtime via Socket.IO</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Socket.IO client (use matching version with your server) -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+  <script>
+    // --- Config & elements ---
+    const canvas = document.getElementById('drawCanvas');
+    const ctx = canvas.getContext('2d');
+    const colorInput = document.getElementById('color');
+    const widthInput = document.getElementById('width');
+    const clearBtn = document.getElementById('clearBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const serverUrlInput = document.getElementById('serverUrl');
+    const connectBtn = document.getElementById('connectBtn');
+    const statusEl = document.getElementById('status');
+    const clientsCountEl = document.getElementById('clientsCount');
+
+    let socket = null;
+    let drawing = false;
+    let currentStroke = [];
+    let devicePixelRatioBackup = window.devicePixelRatio || 1;
+
+    // Resize canvas to be crisp on high-DPI displays
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      canvas.style.width = rect.width + "px";
+      canvas.style.height = rect.height + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineCap = 'round';
+      redrawAllCached(); // no persistent cache here, but keep API if you add caching
+    }
+
+    // initial style & sizing
+    function initCanvasSize(){
+      // give the canvas a comfortable drawing area
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      // call resize using bounding box
+      setTimeout(resizeCanvas, 50);
+    }
+    initCanvasSize();
+    window.addEventListener('resize', resizeCanvas);
+
+    // --- Drawing helpers ---
+    function drawLineSegment(p1, p2, color, widthPx) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = widthPx;
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+    }
+
+    function drawStrokeLocally(stroke) {
+      if (!stroke || !stroke.points || stroke.points.length < 2) return;
+      for (let i = 1; i < stroke.points.length; i++) {
+        drawLineSegment(stroke.points[i-1], stroke.points[i], stroke.color, stroke.width);
+      }
+    }
+
+    // For the demo we don't keep a large persistent cache.
+    // If you want to keep local history to redraw on resize, store strokes in an array here.
+    let localStrokesCache = [];
+
+    function redrawAllCached(){
+      // clear white background
+      ctx.clearRect(0,0,canvas.width, canvas.height);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0,0,canvas.width, canvas.height);
+      // redraw cached strokes
+      localStrokesCache.forEach(s => drawStrokeLocally(s));
+    }
+
+    // --- Pointer and touch handling ---
+    function getPointerPosition(e) {
+      const rect = canvas.getBoundingClientRect();
+      if (e.touches && e.touches[0]) {
+        const t = e.touches[0];
+        return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+      } else {
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      }
+    }
+
+    function pointerDown(e) {
+      e.preventDefault();
+      drawing = true;
+      currentStroke = {
+        color: colorInput.value || '#000',
+        width: parseInt(widthInput.value || 3, 10),
+        points: []
+      };
+      const pos = getPointerPosition(e);
+      currentStroke.points.push(pos);
+    }
+
+    function pointerMove(e) {
+      if (!drawing) return;
+      const pos = getPointerPosition(e);
+      const last = currentStroke.points[currentStroke.points.length - 1];
+      currentStroke.points.push(pos);
+      // draw incremental line
+      drawLineSegment(last, pos, currentStroke.color, currentStroke.width);
+      // optional: emit intermediate points for lower latency (not included here)
+    }
+
+    function pointerUp(e) {
+      if (!drawing) return;
+      drawing = false;
+      // if stroke has content, add to local cache and emit to server
+      if (currentStroke.points.length > 0) {
+        localStrokesCache.push(currentStroke);
+        if (socket && socket.connected) {
+          socket.emit('stroke', currentStroke);
+        }
+      }
+      currentStroke = [];
+    }
+
+    // attach listeners for mouse and touch
+    canvas.addEventListener('mousedown', pointerDown);
+    canvas.addEventListener('mousemove', pointerMove);
+    window.addEventListener('mouseup', pointerUp);
+
+    canvas.addEventListener('touchstart', pointerDown, {passive:false});
+    canvas.addEventListener('touchmove', pointerMove, {passive:false});
+    window.addEventListener('touchend', pointerUp);
+
+    // --- Socket.IO connect & events ---
+    function setStatus(text, connected){
+      statusEl.textContent = text;
+      statusEl.style.color = connected ? '#9ef' : '#f88';
+    }
+
+    function connectToServer(url){
+      try {
+        if (socket){
+          socket.disconnect();
+          socket = null;
+        }
+        setStatus('Connecting…', false);
+        socket = io(url, { transports: ['websocket', 'polling'] });
+
+        socket.on('connect', () => {
+          setStatus('Connected ✅', true);
+          // ask server for client count if you implement that; demo server doesn't send it by default
+        });
+
+        socket.on('disconnect', () => {
+          setStatus('Disconnected 🔴', false);
+        });
+
+        socket.on('init', (strokes) => {
+          // received history from server
+          localStrokesCache = strokes || [];
+          redrawAllCached();
+        });
+
+        socket.on('stroke', (stroke) => {
+          // draw remote stroke on canvas & add to cache
+          localStrokesCache.push(stroke);
+          drawStrokeLocally(stroke);
+        });
+
+        socket.on('clear', () => {
+          localStrokesCache = [];
+          redrawAllCached();
+        });
+
+        // optional: server may emit client count; update when received
+        socket.on('clients', (n) => {
+          clientsCountEl.textContent = n;
+        });
+      } catch(err){
+        console.error('Socket error', err);
+        setStatus('Connection error', false);
+      }
+    }
+
+    // Connect button behavior
+    connectBtn.addEventListener('click', () => {
+      const url = serverUrlInput.value.trim();
+      if (!url) return alert('Please enter server URL');
+      connectToServer(url);
+    });
+
+    // default connect to the input value on load
+    window.addEventListener('load', () => {
+      if (serverUrlInput.value) {
+        connectToServer(serverUrlInput.value);
+      }
+    });
+
+    // --- Clear & Download ---
+    clearBtn.addEventListener('click', () => {
+      if (!confirm('Clear canvas for everyone?')) return;
+      localStrokesCache = [];
+      redrawAllCached();
+      if (socket && socket.connected) socket.emit('clear');
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      // create a temp canvas to export at current logical size
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = canvas.width;
+      exportCanvas.height = canvas.height;
+      const exCtx = exportCanvas.getContext('2d');
+      // white background
+      exCtx.fillStyle = '#ffffff';
+      exCtx.fillRect(0,0,exportCanvas.width, exportCanvas.height);
+      // draw using same logic but scale transform already present
+      exCtx.setTransform(1,0,0,1,0,0);
+      // draw cached strokes scaled to pixel size / CSS size if needed.
+      // Our cached strokes are in CSS pixels; since canvas context scaled by DPR during resize,
+      // drawing directly should work correctly because canvas internal pixel coordinate system
+      // was set using ctx.setTransform(dpr,...).
+      localStrokesCache.forEach(s => {
+        for (let i=1;i<s.points.length;i++){
+          const p1 = s.points[i-1];
+          const p2 = s.points[i];
+          exCtx.strokeStyle = s.color;
+          exCtx.lineWidth = s.width * (window.devicePixelRatio || 1); 
+          exCtx.lineCap = 'round';
+          exCtx.beginPath();
+          exCtx.moveTo(p1.x * (window.devicePixelRatio || 1), p1.y * (window.devicePixelRatio || 1));
+          exCtx.lineTo(p2.x * (window.devicePixelRatio || 1), p2.y * (window.devicePixelRatio || 1));
+          exCtx.stroke();
+        }
+      });
+
+      const url = exportCanvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'drawing.png';
+      a.click();
+    });
+
+    // ensure the canvas has white background at first
+    redrawAllCached();
+
+  </script>
+</body>
+</html>
